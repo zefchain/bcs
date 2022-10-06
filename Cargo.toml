@@ -8,11 +8,11 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-thiserror = "1.0.22"
-serde = { version = "1.0.117", features = ["derive"] }
+thiserror = "1.0.37"
+serde = { version = "1.0.145", features = ["derive"] }
 
 [dev-dependencies]
-criterion = "0.3.3"
+criterion = "0.3.6"
 proptest = "0.10.1"
 proptest-derive = "0.2.0"
 
