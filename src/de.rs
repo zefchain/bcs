@@ -370,23 +370,23 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         r
     }
 
-    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         let len = self.parse_length()?;
-        visitor.visit_seq(SeqDeserializer::new(&mut self, len))
+        visitor.visit_seq(SeqDeserializer::new(self, len))
     }
 
-    fn deserialize_tuple<V>(mut self, len: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer::new(&mut self, len))
+        visitor.visit_seq(SeqDeserializer::new(self, len))
     }
 
     fn deserialize_tuple_struct<V>(
-        mut self,
+        self,
         name: &'static str,
         len: usize,
         visitor: V,
@@ -395,21 +395,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         self.enter_named_container(name)?;
-        let r = visitor.visit_seq(SeqDeserializer::new(&mut self, len));
+        let r = visitor.visit_seq(SeqDeserializer::new(self, len));
         self.leave_named_container();
         r
     }
 
-    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         let len = self.parse_length()?;
-        visitor.visit_map(MapDeserializer::new(&mut self, len))
+        visitor.visit_map(MapDeserializer::new(self, len))
     }
 
     fn deserialize_struct<V>(
-        mut self,
+        self,
         name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
@@ -418,7 +418,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         self.enter_named_container(name)?;
-        let r = visitor.visit_seq(SeqDeserializer::new(&mut self, fields.len()));
+        let r = visitor.visit_seq(SeqDeserializer::new(self, fields.len()));
         self.leave_named_container();
         r
     }
