@@ -1,10 +1,8 @@
 [package]
 name = "bcs"
 version = "0.1.3"
-authors = ["Diem <opensource@diem.com>"]
 description = "Binary Canonical Serialization (BCS)"
-repository = "https://github.com/diem/bcs"
-homepage = "https://diem.com"
+repository = "https://github.com/zefchain/bcs"
 readme = "README.md"
 license = "Apache-2.0"
 edition = "2018"
