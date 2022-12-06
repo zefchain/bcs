@@ -43,12 +43,40 @@ where
     deserializer.end().map(move |_| t)
 }
 
+/// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_bytes_with_limit<'a, T>(bytes: &'a [u8], limit: usize) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::new(bytes, limit);
+    let t = T::deserialize(&mut deserializer)?;
+    deserializer.end().map(move |_| t)
+}
+
 /// Perform a stateful deserialization from a `&[u8]` using the provided `seed`.
 pub fn from_bytes_seed<'a, T>(seed: T, bytes: &'a [u8]) -> Result<T::Value>
 where
     T: DeserializeSeed<'a>,
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
+    let t = seed.deserialize(&mut deserializer)?;
+    deserializer.end().map(move |_| t)
+}
+
+/// Same as `from_bytes_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_bytes_seed_with_limit<'a, T>(seed: T, bytes: &'a [u8], limit: usize) -> Result<T::Value>
+where
+    T: DeserializeSeed<'a>,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::new(bytes, limit);
     let t = seed.deserialize(&mut deserializer)?;
     deserializer.end().map(move |_| t)
 }
