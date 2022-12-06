@@ -13,7 +13,10 @@ use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use bcs::{from_bytes, serialized_size, to_bytes, Error, MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH};
+use bcs::{
+    from_bytes, from_bytes_with_limit, serialized_size, to_bytes, to_bytes_with_limit, Error,
+    MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH,
+};
 
 fn is_same<T>(t: T)
 where
@@ -653,6 +656,29 @@ fn test_recursion_limit() {
     assert_eq!(
         to_bytes(&(&l3, &l3)),
         Err(Error::ExceededContainerDepthLimit("List"))
+    );
+
+    // test customized limit
+    let limit = 100;
+    let not_supported_err = Error::NotSupported("limit exceeds the max allowed depth");
+    let l4 = List::integers(limit);
+    assert_eq!(
+        to_bytes_with_limit(&l4, limit),
+        Err(Error::ExceededContainerDepthLimit("List"))
+    );
+    assert_eq!(
+        to_bytes_with_limit(&l4, MAX_CONTAINER_DEPTH + 1),
+        Err(not_supported_err.clone()),
+    );
+    let bytes = to_bytes_with_limit(&l4, limit + 1).unwrap();
+    assert_eq!(
+        from_bytes_with_limit::<List<usize>>(&bytes, limit),
+        Err(Error::ExceededContainerDepthLimit("List"))
+    );
+    assert_eq!(from_bytes_with_limit(&bytes, limit + 1), Ok(l4));
+    assert_eq!(
+        from_bytes_with_limit::<List<usize>>(&bytes, MAX_CONTAINER_DEPTH + 1),
+        Err(not_supported_err)
     );
 }
 

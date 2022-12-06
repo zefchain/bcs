@@ -55,6 +55,20 @@ where
     Ok(output)
 }
 
+/// Same as `to_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn to_bytes_with_limit<T>(value: &T, limit: usize) -> Result<Vec<u8>>
+where
+    T: ?Sized + Serialize,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut output = Vec::new();
+    serialize_into_with_limit(&mut output, value, limit)?;
+    Ok(output)
+}
+
 /// Same as `to_bytes` but write directly into an `std::io::Write` object.
 pub fn serialize_into<W, T>(write: &mut W, value: &T) -> Result<()>
 where
@@ -62,6 +76,20 @@ where
     T: ?Sized + Serialize,
 {
     let serializer = Serializer::new(write, crate::MAX_CONTAINER_DEPTH);
+    value.serialize(serializer)
+}
+
+/// Same as `serialize_into` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn serialize_into_with_limit<W, T>(write: &mut W, value: &T, limit: usize) -> Result<()>
+where
+    W: ?Sized + std::io::Write,
+    T: ?Sized + Serialize,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let serializer = Serializer::new(write, limit);
     value.serialize(serializer)
 }
 
@@ -88,6 +116,20 @@ where
 {
     let mut counter = WriteCounter(0);
     serialize_into(&mut counter, value)?;
+    Ok(counter.0)
+}
+
+/// Same as `serialized_size` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn serialized_size_with_limit<T>(value: &T, limit: usize) -> Result<usize>
+where
+    T: ?Sized + Serialize,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut counter = WriteCounter(0);
+    serialize_into_with_limit(&mut counter, value, limit)?;
     Ok(counter.0)
 }
 
