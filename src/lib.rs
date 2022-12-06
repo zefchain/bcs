@@ -314,6 +314,9 @@ pub const MAX_SEQUENCE_LENGTH: usize = (1 << 31) - 1;
 /// Maximal allowed depth of BCS data, counting only structs and enums.
 pub const MAX_CONTAINER_DEPTH: usize = 500;
 
-pub use de::{from_bytes, from_bytes_seed};
+pub use de::{from_bytes, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit};
 pub use error::{Error, Result};
-pub use ser::{is_human_readable, serialize_into, serialized_size, to_bytes};
+pub use ser::{
+    is_human_readable, serialize_into, serialize_into_with_limit, serialized_size,
+    serialized_size_with_limit, to_bytes, to_bytes_with_limit,
+};
