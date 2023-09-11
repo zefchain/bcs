@@ -14,8 +14,8 @@ use proptest_derive::Arbitrary;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use bcs::{
-    from_bytes, from_reader, from_bytes_with_limit, to_bytes_with_limit, serialized_size, to_bytes, Error, MAX_CONTAINER_DEPTH,
-    MAX_SEQUENCE_LENGTH,
+    from_bytes, from_bytes_with_limit, from_reader, serialized_size, to_bytes, to_bytes_with_limit,
+    Error, MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH,
 };
 
 /// A helper function to attempt deserialization via reader
