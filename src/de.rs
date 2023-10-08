@@ -137,8 +137,8 @@ impl<'de> Deserializer<&'de [u8]> {
 struct TeeReader<'de, R> {
     /// the underlying reader
     reader: &'de mut R,
-    /// If set, all bytes read from the underlying reader will be duplicated here
-    capture_buffer: Option<Vec<u8>>,
+    /// If non-empty, all bytes read from the underlying reader will be captured in the last entry here.
+    captured_keys: Vec<Vec<u8>>,
 }
 
 impl<'de, R> TeeReader<'de, R> {
@@ -146,7 +146,7 @@ impl<'de, R> TeeReader<'de, R> {
     pub fn new(reader: &'de mut R) -> Self {
         Self {
             reader,
-            capture_buffer: Default::default(),
+            captured_keys: Vec::new(),
         }
     }
 }
@@ -154,7 +154,7 @@ impl<'de, R> TeeReader<'de, R> {
 impl<'de, R: Read> Read for TeeReader<'de, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
-        if let Some(ref mut buffer) = self.capture_buffer {
+        if let Some(ref mut buffer) = self.captured_keys.last_mut() {
             buffer.extend_from_slice(&buf[..bytes_read]);
         }
         Ok(bytes_read)
@@ -298,9 +298,12 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
         &mut self,
         seed: K,
     ) -> Result<(K::Value, Self::MaybeBorrowedBytes), Error> {
-        self.input.capture_buffer = Some(Vec::new());
+        self.input.captured_keys.push(Vec::new());
         let key_value = seed.deserialize(&mut *self)?;
-        let key_bytes = self.input.capture_buffer.take().unwrap();
+        let key_bytes = self.input.captured_keys.pop().unwrap();
+        if let Some(previous_key) = self.input.captured_keys.last_mut() {
+            previous_key.extend_from_slice(&key_bytes);
+        }
         Ok((key_value, key_bytes))
     }
 
