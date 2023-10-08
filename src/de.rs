@@ -40,7 +40,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -54,7 +55,8 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Perform a stateful deserialization from a `&[u8]` using the provided `seed`.
@@ -64,7 +66,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -78,7 +81,8 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialize a type from an implementation of [`Read`].
@@ -88,7 +92,8 @@ where
 {
     let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialize a type from an implementation of [`Read`] using the provided seed
@@ -101,7 +106,8 @@ where
 {
     let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialization implementation for BCS
@@ -313,6 +319,7 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
 
 impl<'de> BcsDeserializer<'de> for Deserializer<&'de [u8]> {
     type MaybeBorrowedBytes = &'de [u8];
+
     fn next(&mut self) -> Result<u8> {
         let byte = self.peek()?;
         self.input = &self.input[1..];
