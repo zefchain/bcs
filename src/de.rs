@@ -154,7 +154,7 @@ impl<'de, R> TeeReader<'de, R> {
 impl<'de, R: Read> Read for TeeReader<'de, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
-        if let Some(ref mut buffer) = self.captured_keys.last_mut() {
+        if let Some(buffer) = self.captured_keys.last_mut() {
             buffer.extend_from_slice(&buf[..bytes_read]);
         }
         Ok(bytes_read)
@@ -733,7 +733,7 @@ where
             None => Ok(None),
             Some(remaining) => {
                 let (key_value, key_bytes) = self.de.next_key_seed(seed)?;
-                if let Some(ref previous_key_bytes) = self.previous_key_bytes {
+                if let Some(previous_key_bytes) = &self.previous_key_bytes {
                     if previous_key_bytes.as_ref() >= key_bytes.as_ref() {
                         return Err(Error::NonCanonicalMap);
                     }
