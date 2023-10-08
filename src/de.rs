@@ -86,25 +86,22 @@ where
 }
 
 /// Deserialize a type from an implementation of [`Read`].
-pub fn from_reader<T>(reader: &mut impl Read) -> Result<T>
+pub fn from_reader<T>(mut reader: impl Read) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
     deserializer.end()?;
     Ok(t)
 }
 
 /// Deserialize a type from an implementation of [`Read`] using the provided seed
-pub fn from_reader_seed<T>(
-    seed: T,
-    reader: &mut impl Read,
-) -> Result<<T as DeserializeSeed<'_>>::Value>
+pub fn from_reader_seed<T, V>(seed: T, mut reader: impl Read) -> Result<V>
 where
-    for<'a> T: DeserializeSeed<'a>,
+    for<'a> T: DeserializeSeed<'a, Value = V>,
 {
-    let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
     deserializer.end()?;
     Ok(t)
