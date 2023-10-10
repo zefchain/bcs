@@ -7,6 +7,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
+    iter::FromIterator,
 };
 
 use proptest::prelude::*;
@@ -821,4 +822,32 @@ fn test_recursion_limit_enum() {
         from_bytes_via_reader::<List<EnumA>>(&b3),
         Err(Error::ExceededContainerDepthLimit("EnumA"))
     );
+}
+
+#[test]
+fn test_nested_map() {
+    use std::collections::BTreeMap as Map;
+
+    let mut m = Map::new();
+    m.insert(Map::from_iter([(1u8, 0u8); 5]), 3);
+    let bytes = to_bytes(&m).unwrap();
+
+    assert_eq!(from_bytes(&bytes).as_ref(), Ok(&m));
+    assert_eq!(from_bytes_via_reader(&bytes), Ok(m));
+}
+
+#[test]
+fn test_triple_nested_map() {
+    use std::collections::BTreeMap as Map;
+
+    let mut top_level = Map::new();
+    for i in 0..10 {
+        let mut mid_level = Map::new();
+        mid_level.insert(Map::from_iter([(1u8, 0u8); 5]), i);
+        top_level.insert(mid_level, i + 1);
+    }
+    let bytes = to_bytes(&top_level).unwrap();
+
+    assert_eq!(from_bytes(&bytes).as_ref(), Ok(&top_level));
+    assert_eq!(from_bytes_via_reader(&bytes), Ok(top_level));
 }

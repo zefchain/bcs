@@ -40,7 +40,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -54,7 +55,8 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Perform a stateful deserialization from a `&[u8]` using the provided `seed`.
@@ -64,7 +66,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -78,30 +81,60 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialize a type from an implementation of [`Read`].
-pub fn from_reader<T>(reader: &mut impl Read) -> Result<T>
+pub fn from_reader<T>(mut reader: impl Read) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_reader_with_limit<T>(mut reader: impl Read, limit: usize) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
+    let t = T::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialize a type from an implementation of [`Read`] using the provided seed
-pub fn from_reader_seed<T>(
-    seed: T,
-    reader: &mut impl Read,
-) -> Result<<T as DeserializeSeed<'_>>::Value>
+pub fn from_reader_seed<T, V>(seed: T, mut reader: impl Read) -> Result<V>
 where
-    for<'a> T: DeserializeSeed<'a>,
+    for<'a> T: DeserializeSeed<'a, Value = V>,
 {
-    let mut deserializer = Deserializer::from_reader(reader, crate::MAX_CONTAINER_DEPTH);
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_reader_seed_with_limit<T, V>(seed: T, mut reader: impl Read, limit: usize) -> Result<V>
+where
+    for<'a> T: DeserializeSeed<'a, Value = V>,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
+    let t = seed.deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialization implementation for BCS
@@ -134,16 +167,16 @@ impl<'de> Deserializer<&'de [u8]> {
 struct TeeReader<'de, R> {
     /// the underlying reader
     reader: &'de mut R,
-    /// If set, all bytes read from the underlying reader will be duplicated here
-    capture_buffer: Option<Vec<u8>>,
+    /// If non-empty, all bytes read from the underlying reader will be captured in the last entry here.
+    captured_keys: Vec<Vec<u8>>,
 }
 
 impl<'de, R> TeeReader<'de, R> {
-    /// Wrapse the provided reader in a new [`TeeReader`].
+    /// Wraps the provided reader in a new [`TeeReader`].
     pub fn new(reader: &'de mut R) -> Self {
         Self {
             reader,
-            capture_buffer: Default::default(),
+            captured_keys: Vec::new(),
         }
     }
 }
@@ -151,7 +184,7 @@ impl<'de, R> TeeReader<'de, R> {
 impl<'de, R: Read> Read for TeeReader<'de, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
-        if let Some(ref mut buffer) = self.capture_buffer {
+        if let Some(buffer) = self.captured_keys.last_mut() {
             buffer.extend_from_slice(&buf[..bytes_read]);
         }
         Ok(bytes_read)
@@ -171,10 +204,10 @@ trait BcsDeserializer<'de> {
     where
         V: Visitor<'de>;
 
-    fn next_key_seed<K: DeserializeSeed<'de>>(
+    fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
-        seed: K,
-    ) -> Result<(K::Value, Self::MaybeBorrowedBytes), Error>;
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error>;
 
     /// The `Deserializer::end` method should be called after a type has been
     /// fully deserialized. This allows the `Deserializer` to validate that
@@ -291,13 +324,16 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
         visitor.visit_byte_buf(self.parse_vec()?)
     }
 
-    fn next_key_seed<K: DeserializeSeed<'de>>(
+    fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
-        seed: K,
-    ) -> Result<(K::Value, Self::MaybeBorrowedBytes), Error> {
-        self.input.capture_buffer = Some(Vec::new());
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
+        self.input.captured_keys.push(Vec::new());
         let key_value = seed.deserialize(&mut *self)?;
-        let key_bytes = self.input.capture_buffer.take().unwrap();
+        let key_bytes = self.input.captured_keys.pop().unwrap();
+        if let Some(previous_key) = self.input.captured_keys.last_mut() {
+            previous_key.extend_from_slice(&key_bytes);
+        }
         Ok((key_value, key_bytes))
     }
 
@@ -340,10 +376,10 @@ impl<'de> BcsDeserializer<'de> for Deserializer<&'de [u8]> {
         visitor.visit_borrowed_bytes(self.parse_bytes()?)
     }
 
-    fn next_key_seed<K: DeserializeSeed<'de>>(
+    fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
-        seed: K,
-    ) -> Result<(K::Value, Self::MaybeBorrowedBytes), Error> {
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
         let previous_input_slice = self.input;
         let key_value = seed.deserialize(&mut *self)?;
         let key_len = previous_input_slice.len().saturating_sub(self.input.len());
@@ -726,7 +762,7 @@ where
             None => Ok(None),
             Some(remaining) => {
                 let (key_value, key_bytes) = self.de.next_key_seed(seed)?;
-                if let Some(ref previous_key_bytes) = self.previous_key_bytes {
+                if let Some(previous_key_bytes) = &self.previous_key_bytes {
                     if previous_key_bytes.as_ref() >= key_bytes.as_ref() {
                         return Err(Error::NonCanonicalMap);
                     }

@@ -316,7 +316,7 @@ pub const MAX_CONTAINER_DEPTH: usize = 500;
 
 pub use de::{
     from_bytes, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit, from_reader,
-    from_reader_seed,
+    from_reader_seed, from_reader_seed_with_limit, from_reader_with_limit,
 };
 pub use error::{Error, Result};
 pub use ser::{
