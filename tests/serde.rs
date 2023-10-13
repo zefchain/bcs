@@ -5,7 +5,7 @@
 #![allow(clippy::unit_arg)]
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt,
     iter::FromIterator,
 };
@@ -826,10 +826,8 @@ fn test_recursion_limit_enum() {
 
 #[test]
 fn test_nested_map() {
-    use std::collections::BTreeMap as Map;
-
-    let mut m = Map::new();
-    m.insert(Map::from_iter([(1u8, 0u8); 5]), 3);
+    let mut m = BTreeMap::new();
+    m.insert(BTreeMap::from_iter([(1u8, 0u8), (2u8, 0u8)]), 3);
     let bytes = to_bytes(&m).unwrap();
 
     assert_eq!(from_bytes(&bytes).as_ref(), Ok(&m));
@@ -838,16 +836,20 @@ fn test_nested_map() {
 
 #[test]
 fn test_triple_nested_map() {
-    use std::collections::BTreeMap as Map;
-
-    let mut top_level = Map::new();
+    let mut top_level1 = BTreeMap::new();
+    let mut top_level2 = HashMap::new();
     for i in 0..10 {
-        let mut mid_level = Map::new();
-        mid_level.insert(Map::from_iter([(1u8, 0u8); 5]), i);
-        top_level.insert(mid_level, i + 1);
+        let mut mid_level = BTreeMap::new();
+        mid_level.insert(BTreeMap::from_iter([(1u8, 0u8)]), i);
+        top_level1.insert(mid_level.clone(), i + 1);
+        top_level2.insert(mid_level, i + 1);
     }
-    let bytes = to_bytes(&top_level).unwrap();
+    let bytes1 = to_bytes(&top_level1).unwrap();
+    let bytes2 = to_bytes(&top_level2).unwrap();
+    assert_eq!(bytes1, bytes2);
 
-    assert_eq!(from_bytes(&bytes).as_ref(), Ok(&top_level));
-    assert_eq!(from_bytes_via_reader(&bytes), Ok(top_level));
+    assert_eq!(from_bytes(&bytes1).as_ref(), Ok(&top_level1));
+    assert_eq!(from_bytes_via_reader(&bytes1), Ok(top_level1));
+    assert_eq!(from_bytes(&bytes2).as_ref(), Ok(&top_level2));
+    assert_eq!(from_bytes_via_reader(&bytes2), Ok(top_level2));
 }
