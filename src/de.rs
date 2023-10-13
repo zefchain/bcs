@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{Error, Result};
-use serde::de::{self, Deserialize, DeserializeSeed, IntoDeserializer, Visitor};
-use std::convert::TryFrom;
+use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor};
+use std::{convert::TryFrom, io::Read};
 
 /// Deserializes a `&[u8]` into a type.
 ///
@@ -40,7 +40,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -54,7 +55,8 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = T::deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Perform a stateful deserialization from a `&[u8]` using the provided `seed`.
@@ -64,7 +66,8 @@ where
 {
     let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Same as `from_bytes_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -78,16 +81,78 @@ where
     }
     let mut deserializer = Deserializer::new(bytes, limit);
     let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end().map(move |_| t)
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Deserialize a type from an implementation of [`Read`].
+pub fn from_reader<T>(mut reader: impl Read) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
+    let t = T::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_reader_with_limit<T>(mut reader: impl Read, limit: usize) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
+    let t = T::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Deserialize a type from an implementation of [`Read`] using the provided seed
+pub fn from_reader_seed<T, V>(seed: T, mut reader: impl Read) -> Result<V>
+where
+    for<'a> T: DeserializeSeed<'a, Value = V>,
+{
+    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
+    let t = seed.deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
+}
+
+/// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
+/// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
+pub fn from_reader_seed_with_limit<T, V>(seed: T, mut reader: impl Read, limit: usize) -> Result<V>
+where
+    for<'a> T: DeserializeSeed<'a, Value = V>,
+{
+    if limit > crate::MAX_CONTAINER_DEPTH {
+        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+    }
+    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
+    let t = seed.deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
 }
 
 /// Deserialization implementation for BCS
-struct Deserializer<'de> {
-    input: &'de [u8],
+struct Deserializer<R> {
+    input: R,
     max_remaining_depth: usize,
 }
 
-impl<'de> Deserializer<'de> {
+impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
+    fn from_reader(input: &'de mut R, max_remaining_depth: usize) -> Self {
+        Deserializer {
+            input: TeeReader::new(input),
+            max_remaining_depth,
+        }
+    }
+}
+
+impl<'de> Deserializer<&'de [u8]> {
     /// Creates a new `Deserializer` which will be deserializing the provided
     /// input.
     fn new(input: &'de [u8], max_remaining_depth: usize) -> Self {
@@ -96,29 +161,58 @@ impl<'de> Deserializer<'de> {
             max_remaining_depth,
         }
     }
+}
 
-    /// The `Deserializer::end` method should be called after a type has been
-    /// fully deserialized. This allows the `Deserializer` to validate that
-    /// the there are no more bytes remaining in the input stream.
-    fn end(&mut self) -> Result<()> {
-        if self.input.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::RemainingInput)
+/// A reader that can optionally capture all bytes from an underlying [`Read`]er
+struct TeeReader<'de, R> {
+    /// the underlying reader
+    reader: &'de mut R,
+    /// If non-empty, all bytes read from the underlying reader will be captured in the last entry here.
+    captured_keys: Vec<Vec<u8>>,
+}
+
+impl<'de, R> TeeReader<'de, R> {
+    /// Wraps the provided reader in a new [`TeeReader`].
+    pub fn new(reader: &'de mut R) -> Self {
+        Self {
+            reader,
+            captured_keys: Vec::new(),
         }
     }
 }
 
-impl<'de> Deserializer<'de> {
-    fn peek(&mut self) -> Result<u8> {
-        self.input.first().copied().ok_or(Error::Eof)
+impl<'de, R: Read> Read for TeeReader<'de, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let bytes_read = self.reader.read(buf)?;
+        if let Some(buffer) = self.captured_keys.last_mut() {
+            buffer.extend_from_slice(&buf[..bytes_read]);
+        }
+        Ok(bytes_read)
     }
+}
 
-    fn next(&mut self) -> Result<u8> {
-        let byte = self.peek()?;
-        self.input = &self.input[1..];
-        Ok(byte)
-    }
+trait BcsDeserializer<'de> {
+    type MaybeBorrowedBytes: AsRef<[u8]>;
+
+    fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()>;
+
+    fn parse_and_visit_str<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>;
+
+    fn parse_and_visit_bytes<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>;
+
+    fn next_key_seed<V: DeserializeSeed<'de>>(
+        &mut self,
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error>;
+
+    /// The `Deserializer::end` method should be called after a type has been
+    /// fully deserialized. This allows the `Deserializer` to validate that
+    /// the there are no more bytes remaining in the input stream.
+    fn end(&mut self) -> Result<()>;
 
     fn parse_bool(&mut self) -> Result<bool> {
         let byte = self.next()?;
@@ -130,11 +224,10 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
-        for byte in slice {
-            *byte = self.next()?;
-        }
-        Ok(())
+    fn next(&mut self) -> Result<u8> {
+        let mut byte = [0u8; 1];
+        self.fill_slice(&mut byte)?;
+        Ok(byte[0])
     }
 
     fn parse_u8(&mut self) -> Result<u8> {
@@ -194,6 +287,119 @@ impl<'de> Deserializer<'de> {
         }
         Ok(len)
     }
+}
+
+impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
+    fn parse_vec(&mut self) -> Result<Vec<u8>> {
+        let len = self.parse_length()?;
+        let mut output = vec![0; len];
+        self.fill_slice(&mut output)?;
+        Ok(output)
+    }
+
+    fn parse_string(&mut self) -> Result<String> {
+        let vec = self.parse_vec()?;
+        String::from_utf8(vec).map_err(|_| Error::Utf8)
+    }
+}
+
+impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
+    type MaybeBorrowedBytes = Vec<u8>;
+
+    fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
+        Ok(self.input.read_exact(slice)?)
+    }
+
+    fn parse_and_visit_str<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_string(self.parse_string()?)
+    }
+
+    fn parse_and_visit_bytes<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_byte_buf(self.parse_vec()?)
+    }
+
+    fn next_key_seed<V: DeserializeSeed<'de>>(
+        &mut self,
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
+        self.input.captured_keys.push(Vec::new());
+        let key_value = seed.deserialize(&mut *self)?;
+        let key_bytes = self.input.captured_keys.pop().unwrap();
+        if let Some(previous_key) = self.input.captured_keys.last_mut() {
+            previous_key.extend_from_slice(&key_bytes);
+        }
+        Ok((key_value, key_bytes))
+    }
+
+    fn end(&mut self) -> Result<()> {
+        let mut byte = [0u8; 1];
+        match self.input.read_exact(&mut byte) {
+            Ok(_) => Err(Error::RemainingInput),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+impl<'de> BcsDeserializer<'de> for Deserializer<&'de [u8]> {
+    type MaybeBorrowedBytes = &'de [u8];
+    fn next(&mut self) -> Result<u8> {
+        let byte = self.peek()?;
+        self.input = &self.input[1..];
+        Ok(byte)
+    }
+
+    fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
+        for byte in slice {
+            *byte = self.next()?;
+        }
+        Ok(())
+    }
+
+    fn parse_and_visit_str<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_borrowed_str(self.parse_string()?)
+    }
+
+    fn parse_and_visit_bytes<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_borrowed_bytes(self.parse_bytes()?)
+    }
+
+    fn next_key_seed<V: DeserializeSeed<'de>>(
+        &mut self,
+        seed: V,
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
+        let previous_input_slice = self.input;
+        let key_value = seed.deserialize(&mut *self)?;
+        let key_len = previous_input_slice.len().saturating_sub(self.input.len());
+        let key_bytes = &previous_input_slice[..key_len];
+        Ok((key_value, key_bytes))
+    }
+
+    fn end(&mut self) -> Result<()> {
+        if self.input.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::RemainingInput)
+        }
+    }
+}
+
+impl<'de> Deserializer<&'de [u8]> {
+    fn peek(&mut self) -> Result<u8> {
+        self.input.first().copied().ok_or(Error::Eof)
+    }
 
     fn parse_bytes(&mut self) -> Result<&'de [u8]> {
         let len = self.parse_length()?;
@@ -206,7 +412,9 @@ impl<'de> Deserializer<'de> {
         let slice = self.parse_bytes()?;
         std::str::from_utf8(slice).map_err(|_| Error::Utf8)
     }
+}
 
+impl<R> Deserializer<R> {
     fn enter_named_container(&mut self, name: &'static str) -> Result<()> {
         if self.max_remaining_depth == 0 {
             return Err(Error::ExceededContainerDepthLimit(name));
@@ -220,7 +428,10 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'a, R> de::Deserializer<'de> for &'a mut Deserializer<R>
+where
+    Deserializer<R>: BcsDeserializer<'de>,
+{
     type Error = Error;
 
     // BCS is not a self-describing format so we can't implement `deserialize_any`
@@ -333,28 +544,28 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_string()?)
+        self.parse_and_visit_str(visitor)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_str(visitor)
+        self.parse_and_visit_str(visitor)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_bytes(self.parse_bytes()?)
+        self.parse_and_visit_bytes(visitor)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_bytes(visitor)
+        self.parse_and_visit_bytes(visitor)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
@@ -487,18 +698,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct SeqDeserializer<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct SeqDeserializer<'a, R> {
+    de: &'a mut Deserializer<R>,
     remaining: usize,
 }
-
-impl<'a, 'de> SeqDeserializer<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, remaining: usize) -> Self {
+#[allow(clippy::needless_borrow)]
+impl<'a, R> SeqDeserializer<'a, R> {
+    fn new(de: &'a mut Deserializer<R>, remaining: usize) -> Self {
         Self { de, remaining }
     }
 }
 
-impl<'de, 'a> de::SeqAccess<'de> for SeqDeserializer<'a, 'de> {
+impl<'a, 'de, R> de::SeqAccess<'de> for SeqDeserializer<'a, R>
+where
+    Deserializer<R>: BcsDeserializer<'de>,
+{
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -518,14 +732,14 @@ impl<'de, 'a> de::SeqAccess<'de> for SeqDeserializer<'a, 'de> {
     }
 }
 
-struct MapDeserializer<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct MapDeserializer<'a, R, B> {
+    de: &'a mut Deserializer<R>,
     remaining: usize,
-    previous_key_bytes: Option<&'a [u8]>,
+    previous_key_bytes: Option<B>,
 }
 
-impl<'a, 'de> MapDeserializer<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, remaining: usize) -> Self {
+impl<'a, R, B> MapDeserializer<'a, R, B> {
+    fn new(de: &'a mut Deserializer<R>, remaining: usize) -> Self {
         Self {
             de,
             remaining,
@@ -534,7 +748,10 @@ impl<'a, 'de> MapDeserializer<'a, 'de> {
     }
 }
 
-impl<'de, 'a> de::MapAccess<'de> for MapDeserializer<'a, 'de> {
+impl<'de, 'a, R, B: AsRef<[u8]>> de::MapAccess<'de> for MapDeserializer<'a, R, B>
+where
+    Deserializer<R>: BcsDeserializer<'de, MaybeBorrowedBytes = B>,
+{
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -544,14 +761,9 @@ impl<'de, 'a> de::MapAccess<'de> for MapDeserializer<'a, 'de> {
         match self.remaining.checked_sub(1) {
             None => Ok(None),
             Some(remaining) => {
-                let previous_input_slice = self.de.input;
-                let key_value = seed.deserialize(&mut *self.de)?;
-                let key_len = previous_input_slice
-                    .len()
-                    .saturating_sub(self.de.input.len());
-                let key_bytes = &previous_input_slice[..key_len];
-                if let Some(previous_key_bytes) = self.previous_key_bytes {
-                    if previous_key_bytes >= key_bytes {
+                let (key_value, key_bytes) = self.de.next_key_seed(seed)?;
+                if let Some(previous_key_bytes) = &self.previous_key_bytes {
+                    if previous_key_bytes.as_ref() >= key_bytes.as_ref() {
                         return Err(Error::NonCanonicalMap);
                     }
                 }
@@ -574,7 +786,10 @@ impl<'de, 'a> de::MapAccess<'de> for MapDeserializer<'a, 'de> {
     }
 }
 
-impl<'de, 'a> de::EnumAccess<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'a, R> de::EnumAccess<'de> for &'a mut Deserializer<R>
+where
+    Deserializer<R>: BcsDeserializer<'de>,
+{
     type Error = Error;
     type Variant = Self;
 
@@ -588,7 +803,10 @@ impl<'de, 'a> de::EnumAccess<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-impl<'de, 'a> de::VariantAccess<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'a, R> de::VariantAccess<'de> for &'a mut Deserializer<R>
+where
+    Deserializer<R>: BcsDeserializer<'de>,
+{
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
