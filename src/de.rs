@@ -143,8 +143,8 @@ pub struct Deserializer<R> {
     max_remaining_depth: usize,
 }
 
-impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
-    fn from_reader(input: &'de mut R, max_remaining_depth: usize) -> Self {
+impl<R: Read> Deserializer<TeeReader<R>> {
+    fn from_reader(input: R, max_remaining_depth: usize) -> Self {
         Deserializer {
             input: TeeReader::new(input),
             max_remaining_depth,
@@ -152,10 +152,10 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
     }
 }
 
-impl<'de> Deserializer<&'de [u8]> {
+impl<R> Deserializer<R> {
     /// Creates a new `Deserializer` which will be deserializing the provided
     /// input.
-    pub fn new(input: &'de [u8], max_remaining_depth: usize) -> Self {
+    pub fn new(input: R, max_remaining_depth: usize) -> Self {
         Deserializer {
             input,
             max_remaining_depth,
@@ -164,16 +164,16 @@ impl<'de> Deserializer<&'de [u8]> {
 }
 
 /// A reader that can optionally capture all bytes from an underlying [`Read`]er
-struct TeeReader<'de, R> {
+struct TeeReader<R> {
     /// the underlying reader
-    reader: &'de mut R,
+    reader: R,
     /// If non-empty, all bytes read from the underlying reader will be captured in the last entry here.
     captured_keys: Vec<Vec<u8>>,
 }
 
-impl<'de, R> TeeReader<'de, R> {
+impl<R> TeeReader<R> {
     /// Wraps the provided reader in a new [`TeeReader`].
-    pub fn new(reader: &'de mut R) -> Self {
+    pub fn new(reader: R) -> Self {
         Self {
             reader,
             captured_keys: Vec::new(),
@@ -181,7 +181,7 @@ impl<'de, R> TeeReader<'de, R> {
     }
 }
 
-impl<'de, R: Read> Read for TeeReader<'de, R> {
+impl<R: Read> Read for TeeReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         if let Some(buffer) = self.captured_keys.last_mut() {
@@ -289,7 +289,7 @@ trait BcsDeserializer<'de> {
     }
 }
 
-impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
+impl<R: Read> Deserializer<TeeReader<R>> {
     fn parse_vec(&mut self) -> Result<Vec<u8>> {
         let len = self.parse_length()?;
         let mut output = vec![0; len];
@@ -303,7 +303,7 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
     }
 }
 
-impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
+impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<R>> {
     type MaybeBorrowedBytes = Vec<u8>;
 
     fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
