@@ -316,10 +316,10 @@ pub const MAX_CONTAINER_DEPTH: usize = 500;
 
 pub use de::{
     from_bytes, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit, from_reader,
-    from_reader_seed, from_reader_seed_with_limit, from_reader_with_limit,
+    from_reader_seed, from_reader_seed_with_limit, from_reader_with_limit, Deserializer,
 };
 pub use error::{Error, Result};
 pub use ser::{
     is_human_readable, serialize_into, serialize_into_with_limit, serialized_size,
-    serialized_size_with_limit, to_bytes, to_bytes_with_limit,
+    serialized_size_with_limit, to_bytes, to_bytes_with_limit, Serializer,
 };
