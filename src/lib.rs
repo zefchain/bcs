@@ -312,7 +312,7 @@ pub mod test_helpers;
 pub const MAX_SEQUENCE_LENGTH: usize = (1 << 31) - 1;
 
 /// Maximal allowed depth of BCS data, counting only structs and enums.
-pub const MAX_CONTAINER_DEPTH: usize = 500;
+pub const MAX_CONTAINER_DEPTH: usize = 1500;
 
 pub use de::{
     from_bytes, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit, from_reader,
