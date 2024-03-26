@@ -1,6 +1,9 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use crate::error::{Error, Result};
 use serde::{ser, Serialize};
 
@@ -69,10 +72,10 @@ where
     Ok(output)
 }
 
-/// Same as `to_bytes` but write directly into an `std::io::Write` object.
+/// Same as `to_bytes` but write directly into an `crate::io::Write` object.
 pub fn serialize_into<W, T>(write: &mut W, value: &T) -> Result<()>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
     T: ?Sized + Serialize,
 {
     let serializer = Serializer::new(write, crate::MAX_CONTAINER_DEPTH);
@@ -83,7 +86,7 @@ where
 /// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
 pub fn serialize_into_with_limit<W, T>(write: &mut W, value: &T, limit: usize) -> Result<()>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
     T: ?Sized + Serialize,
 {
     if limit > crate::MAX_CONTAINER_DEPTH {
@@ -95,16 +98,19 @@ where
 
 struct WriteCounter(usize);
 
-impl std::io::Write for WriteCounter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl crate::io::Write for WriteCounter {
+    fn write(&mut self, buf: &[u8]) -> crate::io::Result<usize> {
         let len = buf.len();
         self.0 = self.0.checked_add(len).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "WriteCounter reached max value")
+            crate::io::Error::new(
+                crate::io::ErrorKind::Other,
+                "WriteCounter reached max value",
+            )
         })?;
         Ok(len)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> crate::io::Result<()> {
         Ok(())
     }
 }
@@ -147,7 +153,7 @@ struct Serializer<'a, W: ?Sized> {
 
 impl<'a, W> Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     /// Creates a new `Serializer` which will emit BCS.
     fn new(output: &'a mut W, max_remaining_depth: usize) -> Self {
@@ -192,7 +198,7 @@ where
 
 impl<'a, W> ser::Serializer for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -405,7 +411,7 @@ where
 
 impl<'a, W> ser::SerializeSeq for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -424,7 +430,7 @@ where
 
 impl<'a, W> ser::SerializeTuple for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -443,7 +449,7 @@ where
 
 impl<'a, W> ser::SerializeTupleStruct for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -462,7 +468,7 @@ where
 
 impl<'a, W> ser::SerializeTupleVariant for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -498,7 +504,7 @@ impl<'a, W: ?Sized> MapSerializer<'a, W> {
 
 impl<'a, W> ser::SerializeMap for MapSerializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -559,7 +565,7 @@ where
 
 impl<'a, W> ser::SerializeStruct for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;
@@ -578,7 +584,7 @@ where
 
 impl<'a, W> ser::SerializeStructVariant for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + crate::io::Write,
 {
     type Ok = ();
     type Error = Error;

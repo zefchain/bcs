@@ -4,25 +4,37 @@
 // For some reason deriving `Arbitrary` results in clippy firing a `unit_arg` violation
 #![allow(clippy::unit_arg)]
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    fmt,
-    iter::FromIterator,
+mod test_helpers;
+
+extern crate alloc;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+use alloc::{
+    borrow::Cow,
+    boxed::Box,
+    collections::{BTreeMap, BTreeSet},
+    format,
+    string::String,
+    vec,
+    vec::Vec,
 };
+use core::{fmt, iter::FromIterator};
 
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use bcs::{
+use crate::{
     from_bytes, from_bytes_with_limit, from_reader, serialized_size, to_bytes, to_bytes_with_limit,
     Error, MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH,
 };
 
 /// A helper function to attempt deserialization via reader
 fn from_bytes_via_reader<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
-    let mut reader = std::io::Cursor::new(bytes);
-    let s_from_reader = from_reader(&mut reader)?;
+    let reader = crate::io::Cursor::new(bytes.to_vec());
+    let s_from_reader = from_reader(reader)?;
     Ok(s_from_reader)
 }
 
@@ -508,8 +520,6 @@ fn zero_copy_parse() {
 
 #[test]
 fn cow() {
-    use std::borrow::Cow;
-
     let large_object = vec![1u32, 2, 3, 4, 5, 6];
     let mut large_map = BTreeMap::new();
     large_map.insert(1, 2);
@@ -558,8 +568,6 @@ fn cow() {
 
 #[test]
 fn strbox() {
-    use std::borrow::Cow;
-
     let strx: &'static str = "hello world";
     let serialized = to_bytes(&Cow::Borrowed(strx)).unwrap();
     let deserialized: Cow<'static, String> = from_bytes(&serialized).unwrap();
@@ -572,8 +580,6 @@ fn strbox() {
 
 #[test]
 fn slicebox() {
-    use std::borrow::Cow;
-
     let slice = [1u32, 2, 3, 4, 5];
     let serialized = to_bytes(&Cow::Borrowed(&slice[..])).unwrap();
     let deserialized: Cow<'static, Vec<u32>> = from_bytes(&serialized).unwrap();
@@ -593,6 +599,7 @@ fn slicebox() {
     assert_eq!(slice, vecx[..]);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn path_buf() {
     use std::path::{Path, PathBuf};
@@ -834,6 +841,7 @@ fn test_nested_map() {
     assert_eq!(from_bytes_via_reader(&bytes), Ok(m));
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_triple_nested_map() {
     let mut top_level1 = BTreeMap::new();

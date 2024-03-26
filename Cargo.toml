@@ -8,13 +8,19 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-thiserror = "1.0.37"
-serde = { version = "1.0.145", features = ["derive"] }
+strum = { version = "0.26.2", default-features = false, features = ["derive"] }
+thiserror = { version = "1.0.58", optional = true }
+onlyerror = { version = "0.1.4", default-features = false }
+serde = { version = "1.0.145", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 criterion = "0.3.6"
 proptest = "0.10.1"
 proptest-derive = "0.2.0"
+
+[features]
+default = ["std"]
+std = ["thiserror", "serde/std"]
 
 [[bench]]
 name = "bcs_bench"

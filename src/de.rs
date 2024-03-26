@@ -1,9 +1,16 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(not(feature = "std"))]
+use alloc::{str, string::String, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::str;
+
 use crate::error::{Error, Result};
+use crate::io::Read;
+use core::convert::TryFrom;
 use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor};
-use std::{convert::TryFrom, io::Read};
 
 /// Deserializes a `&[u8]` into a type.
 ///
@@ -182,7 +189,7 @@ impl<'de, R> TeeReader<'de, R> {
 }
 
 impl<'de, R: Read> Read for TeeReader<'de, R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> crate::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         if let Some(buffer) = self.captured_keys.last_mut() {
             buffer.extend_from_slice(&buf[..bytes_read]);
@@ -207,7 +214,7 @@ trait BcsDeserializer<'de> {
     fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
         seed: V,
-    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error>;
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes)>;
 
     /// The `Deserializer::end` method should be called after a type has been
     /// fully deserialized. This allows the `Deserializer` to validate that
@@ -327,7 +334,7 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
     fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
         seed: V,
-    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes)> {
         self.input.captured_keys.push(Vec::new());
         let key_value = seed.deserialize(&mut *self)?;
         let key_bytes = self.input.captured_keys.pop().unwrap();
@@ -341,7 +348,7 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
         let mut byte = [0u8; 1];
         match self.input.read_exact(&mut byte) {
             Ok(_) => Err(Error::RemainingInput),
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(()),
+            Err(e) if e.kind() == crate::io::ErrorKind::UnexpectedEof => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
@@ -379,7 +386,7 @@ impl<'de> BcsDeserializer<'de> for Deserializer<&'de [u8]> {
     fn next_key_seed<V: DeserializeSeed<'de>>(
         &mut self,
         seed: V,
-    ) -> Result<(V::Value, Self::MaybeBorrowedBytes), Error> {
+    ) -> Result<(V::Value, Self::MaybeBorrowedBytes)> {
         let previous_input_slice = self.input;
         let key_value = seed.deserialize(&mut *self)?;
         let key_len = previous_input_slice.len().saturating_sub(self.input.len());
@@ -410,7 +417,7 @@ impl<'de> Deserializer<&'de [u8]> {
 
     fn parse_string(&mut self) -> Result<&'de str> {
         let slice = self.parse_bytes()?;
-        std::str::from_utf8(slice).map_err(|_| Error::Utf8)
+        str::from_utf8(slice).map_err(|_| Error::Utf8)
     }
 }
 
