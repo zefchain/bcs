@@ -1,9 +1,138 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+//! BCS deserialization
+
 use crate::error::{Error, Result};
 use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor};
-use std::{convert::TryFrom, io::Read};
+use std::{convert::TryFrom, io::Read, marker::PhantomData};
+
+/// Builder API to configure deserialization.
+///
+/// # Examples
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct Ip([u8; 4]);
+///
+/// #[derive(Deserialize)]
+/// struct Port(u16);
+///
+/// #[derive(Deserialize)]
+/// struct SocketAddr {
+///     ip: Ip,
+///     port: Port,
+/// }
+///
+/// let bytes = vec![0x7f, 0x00, 0x00, 0x01, 0x41, 0x1f];
+/// let socket_addr: SocketAddr =
+///     bcs::de::Builder::new()
+///         .max_sequence_length(1_024 * 1_024)
+///         .max_container_depth(64)
+///         .deserialize_bytes(&bytes)
+///         .unwrap();
+///
+/// assert_eq!(socket_addr.ip.0, [127, 0, 0, 1]);
+/// assert_eq!(socket_addr.port.0, 8001);
+/// ```
+pub struct Builder<T> {
+    max_container_depth: usize,
+    max_sequence_length: usize,
+    seed: T,
+}
+
+impl<T> Builder<PhantomData<T>> {
+    /// Creates a `Builder` instance with default parameter values.
+    pub fn new() -> Self {
+        Self::with_seed(PhantomData)
+    }
+}
+
+impl<S> Builder<S> {
+    /// Creates a `Builder` with the given seed value for stateful deserialization.
+    /// The other parameters are initialized with default values.
+    pub fn with_seed(seed: S) -> Builder<S> {
+        Self {
+            max_container_depth: crate::MAX_CONTAINER_DEPTH,
+            max_sequence_length: crate::MAX_SEQUENCE_LENGTH,
+            seed,
+        }
+    }
+}
+
+impl<T: Default> Default for Builder<T> {
+    fn default() -> Self {
+        Builder::with_seed(Default::default())
+    }
+}
+
+impl<T> Builder<T> {
+    /// Sets the limit on depth of nested BCS data.
+    ///
+    /// The default is the [well-known limit][crate::MAX_CONTAINER_DEPTH]
+    /// defined for BCS.
+    /// If the value passed is larger than that, deserialization with this
+    /// `Builder` will fail with an error.
+    pub fn max_container_depth(mut self, limit: usize) -> Self {
+        self.max_container_depth = limit;
+        self
+    }
+
+    /// Set the length limit on variable-length sequences: byte arrays,
+    /// strings, sequences and maps. Encountering an encoded sequence
+    /// with a greater length will cause deserialization to fail with an
+    /// `ExceededMaxLen` error.
+    ///
+    /// The default is the [well-known limit][crate::MAX_SEQUENCE_LENGTH]
+    /// defined for BCS.
+    /// If the value passed is larger than that, deserialization with this
+    /// `Builder` will fail with an error.
+    pub fn max_sequence_length(mut self, limit: usize) -> Self {
+        self.max_sequence_length = limit;
+        self
+    }
+
+    fn check_sanity(&self) -> Result<(), Error> {
+        if self.max_container_depth > crate::MAX_CONTAINER_DEPTH {
+            return Err(Error::NotSupported(
+                "container depth limit exceeds the max allowed depth",
+            ));
+        }
+        if self.max_sequence_length > crate::MAX_SEQUENCE_LENGTH {
+            return Err(Error::NotSupported(
+                "sequence length limit exceeds the max sequence length",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<'a, T> Builder<T>
+where
+    T: DeserializeSeed<'a>,
+{
+    /// Deserializes a value from an `&[u8]` using the configured parameters.
+    pub fn deserialize_bytes(self, bytes: &'a [u8]) -> Result<T::Value> {
+        self.check_sanity()?;
+        let mut deserializer =
+            Deserializer::new(bytes, self.max_container_depth, self.max_sequence_length);
+        let t = self.seed.deserialize(&mut deserializer)?;
+        deserializer.end()?;
+        Ok(t)
+    }
+
+    /// Deserializes a value from an implementation of [`Read`] using the configured parameters.
+    pub fn deserialize_reader(self, reader: &'a mut impl Read) -> Result<T::Value> {
+        self.check_sanity()?;
+        let mut deserializer =
+            Deserializer::from_reader(reader, self.max_container_depth, self.max_sequence_length);
+        let t = self.seed.deserialize(&mut deserializer)?;
+        deserializer.end()?;
+        Ok(t)
+    }
+}
 
 /// Deserializes a `&[u8]` into a type.
 ///
@@ -38,10 +167,7 @@ pub fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
-    let t = T::deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::new().deserialize_bytes(bytes)
 }
 
 /// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -50,13 +176,9 @@ pub fn from_bytes_with_limit<'a, T>(bytes: &'a [u8], limit: usize) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
-    }
-    let mut deserializer = Deserializer::new(bytes, limit);
-    let t = T::deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::new()
+        .max_container_depth(limit)
+        .deserialize_bytes(bytes)
 }
 
 /// Perform a stateful deserialization from a `&[u8]` using the provided `seed`.
@@ -64,10 +186,7 @@ pub fn from_bytes_seed<'a, T>(seed: T, bytes: &'a [u8]) -> Result<T::Value>
 where
     T: DeserializeSeed<'a>,
 {
-    let mut deserializer = Deserializer::new(bytes, crate::MAX_CONTAINER_DEPTH);
-    let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::with_seed(seed).deserialize_bytes(bytes)
 }
 
 /// Same as `from_bytes_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -76,13 +195,9 @@ pub fn from_bytes_seed_with_limit<'a, T>(seed: T, bytes: &'a [u8], limit: usize)
 where
     T: DeserializeSeed<'a>,
 {
-    if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
-    }
-    let mut deserializer = Deserializer::new(bytes, limit);
-    let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::with_seed(seed)
+        .max_container_depth(limit)
+        .deserialize_bytes(bytes)
 }
 
 /// Deserialize a type from an implementation of [`Read`].
@@ -90,10 +205,7 @@ pub fn from_reader<T>(mut reader: impl Read) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
-    let t = T::deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::new().deserialize_reader(&mut reader)
 }
 
 /// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -102,13 +214,9 @@ pub fn from_reader_with_limit<T>(mut reader: impl Read, limit: usize) -> Result<
 where
     T: DeserializeOwned,
 {
-    if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
-    }
-    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
-    let t = T::deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::new()
+        .max_container_depth(limit)
+        .deserialize_reader(&mut reader)
 }
 
 /// Deserialize a type from an implementation of [`Read`] using the provided seed
@@ -116,10 +224,7 @@ pub fn from_reader_seed<T, V>(seed: T, mut reader: impl Read) -> Result<V>
 where
     for<'a> T: DeserializeSeed<'a, Value = V>,
 {
-    let mut deserializer = Deserializer::from_reader(&mut reader, crate::MAX_CONTAINER_DEPTH);
-    let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::with_seed(seed).deserialize_reader(&mut reader)
 }
 
 /// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
@@ -128,26 +233,28 @@ pub fn from_reader_seed_with_limit<T, V>(seed: T, mut reader: impl Read, limit: 
 where
     for<'a> T: DeserializeSeed<'a, Value = V>,
 {
-    if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
-    }
-    let mut deserializer = Deserializer::from_reader(&mut reader, limit);
-    let t = seed.deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    Ok(t)
+    Builder::with_seed(seed)
+        .max_container_depth(limit)
+        .deserialize_reader(&mut reader)
 }
 
 /// Deserialization implementation for BCS
 struct Deserializer<R> {
     input: R,
     max_remaining_depth: usize,
+    max_sequence_length: usize,
 }
 
 impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
-    fn from_reader(input: &'de mut R, max_remaining_depth: usize) -> Self {
+    fn from_reader(
+        input: &'de mut R,
+        max_remaining_depth: usize,
+        max_sequence_length: usize,
+    ) -> Self {
         Deserializer {
             input: TeeReader::new(input),
             max_remaining_depth,
+            max_sequence_length,
         }
     }
 }
@@ -155,10 +262,11 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
 impl<'de> Deserializer<&'de [u8]> {
     /// Creates a new `Deserializer` which will be deserializing the provided
     /// input.
-    fn new(input: &'de [u8], max_remaining_depth: usize) -> Self {
+    fn new(input: &'de [u8], max_remaining_depth: usize, max_sequence_length: usize) -> Self {
         Deserializer {
             input,
             max_remaining_depth,
+            max_sequence_length,
         }
     }
 }
@@ -191,7 +299,11 @@ impl<'de, R: Read> Read for TeeReader<'de, R> {
     }
 }
 
-trait BcsDeserializer<'de> {
+trait ValidateLength {
+    fn validate_length(&self, parsed_value: u32) -> Result<usize, Error>;
+}
+
+trait BcsDeserializer<'de>: ValidateLength {
     type MaybeBorrowedBytes: AsRef<[u8]>;
 
     fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()>;
@@ -281,11 +393,8 @@ trait BcsDeserializer<'de> {
     }
 
     fn parse_length(&mut self) -> Result<usize> {
-        let len = self.parse_u32_from_uleb128()? as usize;
-        if len > crate::MAX_SEQUENCE_LENGTH {
-            return Err(Error::ExceededMaxLen(len));
-        }
-        Ok(len)
+        let parsed_value = self.parse_u32_from_uleb128()?;
+        self.validate_length(parsed_value)
     }
 }
 
@@ -300,6 +409,16 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
     fn parse_string(&mut self) -> Result<String> {
         let vec = self.parse_vec()?;
         String::from_utf8(vec).map_err(|_| Error::Utf8)
+    }
+}
+
+impl<R> ValidateLength for Deserializer<R> {
+    fn validate_length(&self, parsed_value: u32) -> Result<usize, Error> {
+        let len = parsed_value as usize;
+        if len > self.max_sequence_length {
+            return Err(Error::ExceededMaxLen(len));
+        }
+        Ok(len)
     }
 }
 

@@ -62,7 +62,9 @@ where
     T: ?Sized + Serialize,
 {
     if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+        return Err(Error::NotSupported(
+            "container depth limit exceeds the max allowed depth",
+        ));
     }
     let mut output = Vec::new();
     serialize_into_with_limit(&mut output, value, limit)?;
@@ -87,7 +89,9 @@ where
     T: ?Sized + Serialize,
 {
     if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+        return Err(Error::NotSupported(
+            "container depth limit exceeds the max allowed depth",
+        ));
     }
     let serializer = Serializer::new(write, limit);
     value.serialize(serializer)
@@ -126,7 +130,9 @@ where
     T: ?Sized + Serialize,
 {
     if limit > crate::MAX_CONTAINER_DEPTH {
-        return Err(Error::NotSupported("limit exceeds the max allowed depth"));
+        return Err(Error::NotSupported(
+            "container depth limit exceeds the max allowed depth",
+        ));
     }
     let mut counter = WriteCounter(0);
     serialize_into_with_limit(&mut counter, value, limit)?;

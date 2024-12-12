@@ -303,7 +303,7 @@
 //! # Ok(())}
 //! ```
 
-mod de;
+pub mod de;
 mod error;
 mod ser;
 pub mod test_helpers;
