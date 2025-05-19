@@ -1,7 +1,7 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 //! # Binary Canonical Serialization (BCS)
 //!
@@ -315,7 +315,7 @@ pub const MAX_SEQUENCE_LENGTH: usize = (1 << 31) - 1;
 pub const MAX_CONTAINER_DEPTH: usize = 500;
 
 pub use de::{
-    from_bytes, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit, from_reader,
+    from_bytes, from_bytes_discarding_remaining_input, from_bytes_seed, from_bytes_seed_with_limit, from_bytes_with_limit, from_reader,
     from_reader_seed, from_reader_seed_with_limit, from_reader_with_limit,
 };
 pub use error::{Error, Result};

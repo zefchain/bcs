@@ -44,6 +44,52 @@ where
     Ok(t)
 }
 
+/// Deserializes a `&[u8]` into a type.
+///
+/// This function will attempt to interpret `bytes` as the BCS serialized form of `T` and
+/// deserialize `T` from `bytes`.
+///
+/// # Safety
+///
+/// This is unsafe. Developers must ensure that their `Deserialize`
+/// structs correctly reflect the data being deserialized.
+/// If the deserialization logic of one type overlaps with the next field,
+/// the overall deserialization might succeed with undefined behavior.
+///
+/// If you're not sure what you're doing, consider using `from_bytes` instead.
+///
+/// # Examples
+///
+/// ```
+/// use bcs::from_bytes_discarding_remaining_input;
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct Ip([u8; 4]);
+///
+/// #[derive(Deserialize)]
+/// struct SocketAddr {
+///     ip: Ip,
+/// }
+///
+/// let bytes = vec![0x7f, 0x00, 0x00, 0x01, 0x41, 0x1f];
+/// let socket_addr: SocketAddr = unsafe {
+///     from_bytes_discarding_remaining_input(&bytes).unwrap()
+/// };
+///
+/// assert_eq!(socket_addr.ip.0, [127, 0, 0, 1]);
+/// ```
+#[allow(unsafe_code)]
+pub unsafe fn from_bytes_discarding_remaining_input<'a, T>(bytes: &'a [u8]) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = Deserializer::new_discarding_remaining_input(bytes, crate::MAX_CONTAINER_DEPTH);
+    let t = T::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(t)
+}
+
 /// Same as `from_bytes` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
 /// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
 pub fn from_bytes_with_limit<'a, T>(bytes: &'a [u8], limit: usize) -> Result<T>
@@ -141,13 +187,18 @@ where
 struct Deserializer<R> {
     input: R,
     max_remaining_depth: usize,
+    discard_remaining_input: bool
 }
 
 impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
-    fn from_reader(input: &'de mut R, max_remaining_depth: usize) -> Self {
+    fn from_reader(
+        input: &'de mut R,
+        max_remaining_depth: usize,
+    ) -> Self {
         Deserializer {
             input: TeeReader::new(input),
             max_remaining_depth,
+            discard_remaining_input: false,
         }
     }
 }
@@ -155,10 +206,35 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
 impl<'de> Deserializer<&'de [u8]> {
     /// Creates a new `Deserializer` which will be deserializing the provided
     /// input.
-    fn new(input: &'de [u8], max_remaining_depth: usize) -> Self {
+    fn new(
+        input: &'de [u8],
+        max_remaining_depth: usize,
+    ) -> Self {
         Deserializer {
             input,
             max_remaining_depth,
+            discard_remaining_input: false,
+        }
+    }
+
+    /// Creates a new `Deserializer` which will be deserializing the provided
+    /// input, and will discard remaining input.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe. Developers must ensure that their `Deserialize`
+    /// structs correctly reflect the data being deserialized.
+    /// If the deserialization logic of one type overlaps with the next field,
+    /// the overall deserialization might succeed with undefined behavior.
+    #[allow(unsafe_code)]
+    unsafe fn new_discarding_remaining_input(
+        input: &'de [u8],
+        max_remaining_depth: usize,
+    ) -> Self {
+        Deserializer {
+            input,
+            max_remaining_depth,
+            discard_remaining_input: true,
         }
     }
 }
@@ -340,7 +416,13 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
     fn end(&mut self) -> Result<()> {
         let mut byte = [0u8; 1];
         match self.input.read_exact(&mut byte) {
-            Ok(_) => Err(Error::RemainingInput),
+            Ok(_) => {
+                if !self.discard_remaining_input {
+                    Err(Error::RemainingInput)
+                } else {
+                    Ok(())
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -388,11 +470,12 @@ impl<'de> BcsDeserializer<'de> for Deserializer<&'de [u8]> {
     }
 
     fn end(&mut self) -> Result<()> {
-        if self.input.is_empty() {
-            Ok(())
-        } else {
+        if !self.discard_remaining_input && !self.input.is_empty() {
             Err(Error::RemainingInput)
+        } else {
+            Ok(())
         }
+
     }
 }
 

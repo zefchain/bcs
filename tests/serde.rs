@@ -14,10 +14,7 @@ use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use bcs::{
-    from_bytes, from_bytes_with_limit, from_reader, serialized_size, to_bytes, to_bytes_with_limit,
-    Error, MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH,
-};
+use bcs::{from_bytes, from_bytes_discarding_remaining_input, from_bytes_with_limit, from_reader, serialized_size, to_bytes, to_bytes_with_limit, Error, MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH};
 
 /// A helper function to attempt deserialization via reader
 fn from_bytes_via_reader<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
@@ -468,6 +465,16 @@ fn leftover_bytes() {
         from_bytes_via_reader::<Vec<u8>>(&seq),
         Err(Error::RemainingInput)
     );
+}
+
+#[test]
+fn leftover_bytes_discarding_remaining_bytes() {
+    let seq = vec![5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // 5 extra elements
+    let result = unsafe {
+        from_bytes_discarding_remaining_input::<Vec<u8>>(&seq)
+    };
+
+    assert_eq!(result, Ok(vec![1, 2, 3, 4, 5]));
 }
 
 #[test]
