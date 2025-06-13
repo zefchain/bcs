@@ -4,7 +4,7 @@
 // `Error::other` doesn't exist on the MSRV.
 #![allow(clippy::io_other_error)]
 // And neither does `clippy::io_other_error`.
-#![allow(unknown-lints)]
+#![allow(unknown_lints)]
 
 use crate::error::{Error, Result};
 use serde::{ser, Serialize};
