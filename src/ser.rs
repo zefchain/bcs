@@ -197,7 +197,7 @@ where
     }
 }
 
-impl<'r, W> ser::Serializer for Serializer<&'r mut W>
+impl<'a, W> ser::Serializer for Serializer<&'a mut W>
 where
     W: std::io::Write,
 {
@@ -207,7 +207,7 @@ where
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
     type SerializeTupleVariant = Self;
-    type SerializeMap = MapSerializer<&'r mut W>;
+    type SerializeMap = MapSerializer<&'a mut W>;
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
