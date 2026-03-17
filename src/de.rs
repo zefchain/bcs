@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{Error, Result};
-use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor};
-use std::{convert::TryFrom, io::Read};
+use core::convert::TryFrom;
+#[cfg(feature = "std")]
+use serde::de::DeserializeOwned;
+use serde::de::{self, Deserialize, DeserializeSeed, IntoDeserializer, Visitor};
 
-/// Deserializes a `&[u8]` into a type.
+/// Deserializes  into a type.
 ///
 /// This function will attempt to interpret `bytes` as the BCS serialized form of `T` and
 /// deserialize `T` from `bytes`.
@@ -85,8 +87,9 @@ where
     Ok(t)
 }
 
-/// Deserialize a type from an implementation of [`Read`].
-pub fn from_reader<T>(mut reader: impl Read) -> Result<T>
+#[cfg(feature = "std")]
+/// Deserialize a type from an implementation of [`std::io::Read`].
+pub fn from_reader<T>(mut reader: impl std::io::Read) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -96,9 +99,10 @@ where
     Ok(t)
 }
 
+#[cfg(feature = "std")]
 /// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
 /// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
-pub fn from_reader_with_limit<T>(mut reader: impl Read, limit: usize) -> Result<T>
+pub fn from_reader_with_limit<T>(mut reader: impl std::io::Read, limit: usize) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -111,8 +115,9 @@ where
     Ok(t)
 }
 
-/// Deserialize a type from an implementation of [`Read`] using the provided seed
-pub fn from_reader_seed<T, V>(seed: T, mut reader: impl Read) -> Result<V>
+#[cfg(feature = "std")]
+/// Deserialize a type from an implementation of [`std::io::Read`] using the provided seed
+pub fn from_reader_seed<T, V>(seed: T, mut reader: impl std::io::Read) -> Result<V>
 where
     for<'a> T: DeserializeSeed<'a, Value = V>,
 {
@@ -122,9 +127,14 @@ where
     Ok(t)
 }
 
+#[cfg(feature = "std")]
 /// Same as `from_reader_seed` but use `limit` as max container depth instead of MAX_CONTAINER_DEPTH`
 /// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
-pub fn from_reader_seed_with_limit<T, V>(seed: T, mut reader: impl Read, limit: usize) -> Result<V>
+pub fn from_reader_seed_with_limit<T, V>(
+    seed: T,
+    mut reader: impl std::io::Read,
+    limit: usize,
+) -> Result<V>
 where
     for<'a> T: DeserializeSeed<'a, Value = V>,
 {
@@ -143,7 +153,8 @@ struct Deserializer<R> {
     max_remaining_depth: usize,
 }
 
-impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
+#[cfg(feature = "std")]
+impl<'de, R: std::io::Read> Deserializer<TeeReader<'de, R>> {
     fn from_reader(input: &'de mut R, max_remaining_depth: usize) -> Self {
         Deserializer {
             input: TeeReader::new(input),
@@ -163,7 +174,8 @@ impl<'de> Deserializer<&'de [u8]> {
     }
 }
 
-/// A reader that can optionally capture all bytes from an underlying [`Read`]er
+#[cfg(feature = "std")]
+/// A reader that can optionally capture all bytes from an underlying [`std::io::Read`]er
 struct TeeReader<'de, R> {
     /// the underlying reader
     reader: &'de mut R,
@@ -171,6 +183,7 @@ struct TeeReader<'de, R> {
     captured_keys: Vec<Vec<u8>>,
 }
 
+#[cfg(feature = "std")]
 impl<'de, R> TeeReader<'de, R> {
     /// Wraps the provided reader in a new [`TeeReader`].
     pub fn new(reader: &'de mut R) -> Self {
@@ -181,7 +194,8 @@ impl<'de, R> TeeReader<'de, R> {
     }
 }
 
-impl<'de, R: Read> Read for TeeReader<'de, R> {
+#[cfg(feature = "std")]
+impl<'de, R: std::io::Read> std::io::Read for TeeReader<'de, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         if let Some(buffer) = self.captured_keys.last_mut() {
@@ -289,7 +303,8 @@ trait BcsDeserializer<'de> {
     }
 }
 
-impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
+#[cfg(feature = "std")]
+impl<'de, R: std::io::Read> Deserializer<TeeReader<'de, R>> {
     fn parse_vec(&mut self) -> Result<Vec<u8>> {
         let len = self.parse_length()?;
         let mut output = vec![0; len];
@@ -303,11 +318,12 @@ impl<'de, R: Read> Deserializer<TeeReader<'de, R>> {
     }
 }
 
-impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
+#[cfg(feature = "std")]
+impl<'de, R: std::io::Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
     type MaybeBorrowedBytes = Vec<u8>;
 
     fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
-        Ok(self.input.read_exact(slice)?)
+        Ok(std::io::Read::read_exact(&mut self.input, slice)?)
     }
 
     fn parse_and_visit_str<V>(&mut self, visitor: V) -> Result<V::Value>
@@ -339,7 +355,7 @@ impl<'de, R: Read> BcsDeserializer<'de> for Deserializer<TeeReader<'de, R>> {
 
     fn end(&mut self) -> Result<()> {
         let mut byte = [0u8; 1];
-        match self.input.read_exact(&mut byte) {
+        match std::io::Read::read_exact(&mut self.input, &mut byte) {
             Ok(_) => Err(Error::RemainingInput),
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(()),
             Err(e) => Err(e.into()),
@@ -410,7 +426,7 @@ impl<'de> Deserializer<&'de [u8]> {
 
     fn parse_string(&mut self) -> Result<&'de str> {
         let slice = self.parse_bytes()?;
-        std::str::from_utf8(slice).map_err(|_| Error::Utf8)
+        core::str::from_utf8(slice).map_err(|_| Error::Utf8)
     }
 }
 

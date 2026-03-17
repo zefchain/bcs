@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{Error, Result};
+use alloc::{string::ToString, vec::Vec};
 use serde::{ser, Serialize};
 
 /// Serialize the given data structure as a `Vec<u8>` of BCS.
@@ -69,10 +70,10 @@ where
     Ok(output)
 }
 
-/// Same as `to_bytes` but write directly into an `std::io::Write` object.
+/// Same as `to_bytes` but write directly into an `Write` object.
 pub fn serialize_into<W, T>(write: &mut W, value: &T) -> Result<()>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
     T: ?Sized + Serialize,
 {
     let serializer = Serializer::new(write, crate::MAX_CONTAINER_DEPTH);
@@ -83,7 +84,7 @@ where
 /// Note that `limit` has to be lower than MAX_CONTAINER_DEPTH
 pub fn serialize_into_with_limit<W, T>(write: &mut W, value: &T, limit: usize) -> Result<()>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
     T: ?Sized + Serialize,
 {
     if limit > crate::MAX_CONTAINER_DEPTH {
@@ -95,13 +96,40 @@ where
 
 struct WriteCounter(usize);
 
+impl WriteCounter {
+    const ERROR_MESSAGE: &'static str = "WriteCounter reached max value";
+
+    fn capture_length(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        let len = buf.len();
+        self.0 = self
+            .0
+            .checked_add(len)
+            .ok_or_else(|| Error::Io(Self::ERROR_MESSAGE.to_string()))?;
+        Ok(len)
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl Write for WriteCounter {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Error> {
+        let _ = self.capture_length(buf)?;
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl Write for Vec<u8> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Error> {
+        self.extend_from_slice(buf);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
 impl std::io::Write for WriteCounter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let len = buf.len();
-        self.0 = self.0.checked_add(len).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "WriteCounter reached max value")
-        })?;
-        Ok(len)
+        self.capture_length(buf)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, Self::ERROR_MESSAGE))
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -145,9 +173,23 @@ struct Serializer<'a, W: ?Sized> {
     max_remaining_depth: usize,
 }
 
-impl<'a, W> Serializer<'a, W>
+pub trait Write {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Error>;
+}
+
+#[cfg(feature = "std")]
+impl<'a, W> Write for W
 where
     W: ?Sized + std::io::Write,
+{
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Error> {
+        Ok(std::io::Write::write_all(self, buf)?)
+    }
+}
+
+impl<'a, W> Serializer<'a, W>
+where
+    W: ?Sized + Write,
 {
     /// Creates a new `Serializer` which will emit BCS.
     fn new(output: &'a mut W, max_remaining_depth: usize) -> Self {
@@ -192,7 +234,7 @@ where
 
 impl<'a, W> ser::Serializer for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -268,6 +310,13 @@ where
     // Just serialize the string as a raw byte array
     fn serialize_str(self, v: &str) -> Result<()> {
         self.serialize_bytes(v.as_bytes())
+    }
+
+    fn collect_str<T>(self, value: &T) -> core::result::Result<Self::Ok, Self::Error>
+    where
+        T: ?Sized + core::fmt::Display,
+    {
+        self.serialize_str(&value.to_string())
     }
 
     // Serialize a byte array as an array of bytes.
@@ -405,7 +454,7 @@ where
 
 impl<'a, W> ser::SerializeSeq for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -424,7 +473,7 @@ where
 
 impl<'a, W> ser::SerializeTuple for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -443,7 +492,7 @@ where
 
 impl<'a, W> ser::SerializeTupleStruct for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -462,7 +511,7 @@ where
 
 impl<'a, W> ser::SerializeTupleVariant for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -498,7 +547,7 @@ impl<'a, W: ?Sized> MapSerializer<'a, W> {
 
 impl<'a, W> ser::SerializeMap for MapSerializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -559,7 +608,7 @@ where
 
 impl<'a, W> ser::SerializeStruct for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
@@ -578,7 +627,7 @@ where
 
 impl<'a, W> ser::SerializeStructVariant for Serializer<'a, W>
 where
-    W: ?Sized + std::io::Write,
+    W: ?Sized + Write,
 {
     type Ok = ();
     type Error = Error;
