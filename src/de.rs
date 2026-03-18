@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{Error, Result};
-use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor};
+use serde_core::de::{
+    self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, Visitor,
+};
 use std::{convert::TryFrom, io::Read};
 
 /// Deserializes a `&[u8]` into a type.

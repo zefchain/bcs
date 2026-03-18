@@ -1,7 +1,7 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use serde::{de, ser};
+use serde_core::{de, ser};
 use std::{fmt, io::ErrorKind};
 use thiserror::Error;
 
