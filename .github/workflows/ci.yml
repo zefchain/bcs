@@ -13,13 +13,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          components: rustfmt, clippy
+      - uses: actions/checkout@v6
+      - run: rustup component add rustfmt clippy
 
       - name: Lint
         run: |
@@ -35,10 +30,5 @@ jobs:
   minimum-supported-rust-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          # Dependencies may require Rust 2021.
-          toolchain: 1.56.0
-          override: true
-      - run: cargo check
+      - uses: actions/checkout@v6
+      - run: cargo +1.61.0 check --locked --lib
