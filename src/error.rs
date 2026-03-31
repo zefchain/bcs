@@ -1,11 +1,12 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use alloc::string::{String, ToString};
+use core::fmt;
 use serde::{de, ser};
-use std::{fmt, io::ErrorKind};
 use thiserror::Error;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum Error {
@@ -43,9 +44,10 @@ pub enum Error {
     IntegerOverflowDuringUleb128Decoding,
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
-        if err.kind() == ErrorKind::UnexpectedEof {
+        if err.kind() == std::io::ErrorKind::UnexpectedEof {
             Error::Eof
         } else {
             Error::Io(err.to_string())
