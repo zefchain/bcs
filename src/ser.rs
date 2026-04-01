@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error::{Error, Result};
-use serde::{ser, Serialize};
+use serde_core::{ser, Serialize};
 
 /// Serialize the given data structure as a `Vec<u8>` of BCS.
 ///

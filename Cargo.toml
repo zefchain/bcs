@@ -6,15 +6,16 @@ repository = "https://github.com/zefchain/bcs"
 readme = "README.md"
 license = "Apache-2.0"
 edition = "2018"
+rust-version = "1.61.0"
 
 [dependencies]
-thiserror = "1.0.37"
-serde = { version = "1.0.145", features = ["derive"] }
+serde_core = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 criterion = "0.3.6"
 proptest = "0.10.1"
 proptest-derive = "0.2.0"
+serde = { version = "1", features = ["derive"] }
 
 [[bench]]
 name = "bcs_bench"

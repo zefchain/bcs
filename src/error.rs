@@ -1,46 +1,62 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use serde::{de, ser};
+use serde_core::{de, ser};
 use std::{fmt, io::ErrorKind};
-use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
-    #[error("unexpected end of input")]
     Eof,
-    #[error("I/O error: {0}")]
     Io(String),
-    #[error("exceeded max sequence length: {0}")]
     ExceededMaxLen(usize),
-    #[error("exceeded max container depth while entering: {0}")]
     ExceededContainerDepthLimit(&'static str),
-    #[error("expected boolean")]
     ExpectedBoolean,
-    #[error("expected map key")]
     ExpectedMapKey,
-    #[error("expected map value")]
     ExpectedMapValue,
-    #[error("keys of serialized maps must be unique and in increasing order")]
     NonCanonicalMap,
-    #[error("expected option type")]
     ExpectedOption,
-    #[error("{0}")]
     Custom(String),
-    #[error("sequence missing length")]
     MissingLen,
-    #[error("not supported: {0}")]
     NotSupported(&'static str),
-    #[error("remaining input")]
     RemainingInput,
-    #[error("malformed utf8")]
     Utf8,
-    #[error("ULEB128 encoding was not minimal in size")]
     NonCanonicalUleb128Encoding,
-    #[error("ULEB128-encoded integer did not fit in the target size")]
     IntegerOverflowDuringUleb128Decoding,
+}
+
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eof => f.write_str("unexpected end of input"),
+            Self::Io(err) => write!(f, "I/O error: {err}"),
+            Self::ExceededMaxLen(len) => write!(f, "exceeded max sequence length: {len}"),
+            Self::ExceededContainerDepthLimit(ty) => {
+                write!(f, "exceeded max container depth while entering: {ty}")
+            }
+            Self::ExpectedBoolean => f.write_str("expected boolean"),
+            Self::ExpectedMapKey => f.write_str("expected map key"),
+            Self::ExpectedMapValue => f.write_str("expected map value"),
+            Self::NonCanonicalMap => {
+                f.write_str("keys of serialized maps must be unique and in increasing order")
+            }
+            Self::ExpectedOption => f.write_str("expected option type"),
+            Self::Custom(msg) => f.write_str(msg),
+            Self::MissingLen => f.write_str("sequence missing length"),
+            Self::NotSupported(msg) => write!(f, "not supported: {msg}"),
+            Self::RemainingInput => f.write_str("remaining input"),
+            Self::Utf8 => f.write_str("malformed utf8"),
+            Self::NonCanonicalUleb128Encoding => {
+                f.write_str("ULEB128 encoding was not minimal in size")
+            }
+            Self::IntegerOverflowDuringUleb128Decoding => {
+                f.write_str("ULEB128-encoded integer did not fit in the target size")
+            }
+        }
+    }
 }
 
 impl From<std::io::Error> for Error {
