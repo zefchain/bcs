@@ -142,7 +142,7 @@ pub fn is_human_readable() -> bool {
 }
 
 /// Serialization implementation for BCS
-struct Serializer<W> {
+pub struct Serializer<W> {
     output: W,
     max_remaining_depth: usize,
 }
@@ -152,7 +152,7 @@ where
     W: std::io::Write,
 {
     /// Creates a new `Serializer` which will emit BCS.
-    fn new(output: W, max_remaining_depth: usize) -> Self {
+    pub fn new(output: W, max_remaining_depth: usize) -> Self {
         Self {
             output,
             max_remaining_depth,

@@ -140,7 +140,7 @@ where
 }
 
 /// Deserialization implementation for BCS
-struct Deserializer<R> {
+pub struct Deserializer<R> {
     input: R,
     max_remaining_depth: usize,
 }
@@ -157,7 +157,7 @@ impl<R: Read> Deserializer<TeeReader<R>> {
 impl<R> Deserializer<R> {
     /// Creates a new `Deserializer` which will be deserializing the provided
     /// input.
-    fn new(input: R, max_remaining_depth: usize) -> Self {
+    pub fn new(input: R, max_remaining_depth: usize) -> Self {
         Deserializer {
             input,
             max_remaining_depth,
