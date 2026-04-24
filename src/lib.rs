@@ -12,7 +12,7 @@
 //! * provide good performance and concise (binary) representations;
 //! * support a rich set of data types commonly used in Rust;
 //! * enforce canonical serialization, meaning that every value of a given type should have
-//! a single valid representation.
+//!   a single valid representation.
 //!
 //! BCS also aims to mitigate the consequence of malicious inputs by enforcing well-defined limits
 //! on large or nested containers during (de)serialization.
@@ -44,7 +44,7 @@
 //! applications must carefully plan in advance for adhoc extension points:
 //! * Enums may be used for explicit versioning and backward compatibility (e.g. extensible query interfaces).
 //! * In some cases, data fields of type `Vec<u8>` may also be added to allow (future) unknown payloads
-//! in serialized form.
+//!   in serialized form.
 //!
 //! ## Detailed Specifications
 //!
