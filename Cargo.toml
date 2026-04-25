@@ -1,6 +1,6 @@
 [package]
 name = "bcs"
-version = "0.2.0"
+version = "0.2.1"
 description = "Binary Canonical Serialization (BCS)"
 repository = "https://github.com/zefchain/bcs"
 readme = "README.md"
